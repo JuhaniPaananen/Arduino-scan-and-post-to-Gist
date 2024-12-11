@@ -1,0 +1,168 @@
+//This code is from school project, but had to made different version to make sure it works, so it can be used without intended screen. 
+
+#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <Wire.h>
+#define RX_PIN SCL
+#define TX_PIN SDA
+SoftwareSerial qrScanner (TX_PIN, RX_PIN);
+char qrData[100];
+char filteredData[100];
+int qrIndex = 0; 
+int filteredIndex = 0; 
+unsigned long lastReadTime = 0;
+
+char* merkkijono;
+
+#include <WiFiNINA.h>
+#include <ArduinoHttpClient.h>
+#include <HTTPClient.h>
+#include "arduino_secrets.h"¨
+
+//Here is two options, but uncommented worked for me. Test to make sure, which to use.
+WiFiSSLClient wifi;
+//WiFiClient wifi;
+int status = WL_IDLE_STATUS;
+const char* ssid = ""; //Network name
+const char* password = ""; //Network password
+
+HttpClient clientPatch = HttpClient(wifi, "api.github.com", 443);
+HttpClient clientGet = HttpClient(wifi, "gist.githubusercontent.com", 443);
+const char token[] = "";  //Personal Token
+bool Pushing;
+
+
+void setup() {
+  //If using far, far better Arduino board, then set Baudrate to higher as you like.
+  //Serial.begin(115200);
+  Serial.begin(9600);
+  //WiFi.begin(ssid, password);
+    while ( status != WL_CONNECTED) { 
+    Serial.print("Attempting to connect to Network named: "); 
+    Serial.println(ssid);
+    status = WiFi.begin(ssid, password); 
+  } 
+  Serial.println("Connected to WiFi");
+
+
+  //Might work on somewhere else other than Gist
+  /*
+  clientPatch.beginRequest();
+  clientPatch.sendHeader("Connection", "keep-alive");
+  Serial.println("Patch Alive");
+  clientPatch.setTimeout(5000);
+
+  clientGet.beginRequest();
+  clientGet.sendHeader("Connection", "keep-alive");
+  Serial.println("Get Alive");
+  clientGet.setTimeout(5000);
+
+  clientPatch.endRequest();
+  clientGet.endRequest();
+  */
+
+  Wire.begin();
+  qrScanner.begin(9600); 
+  Serial.println("Start to recognize"); 
+
+  Pushing = false;
+}
+
+void loop() {
+  if(!Pushing)
+  {
+    if (qrScanner.available()) { 
+    char c = qrScanner.read(); 
+    Serial.println(c);
+    lastReadTime = millis();
+
+
+    if (qrIndex < sizeof(qrData) - 1) { 
+      qrData[qrIndex++] = c;
+    }
+      else {
+      Serial.println("Too much data. Resetting Scanner..."); 
+      ResetScanner();
+      }
+    }
+
+
+  if (millis() - lastReadTime > 300 && qrIndex > 0) {
+    qrData[qrIndex] = '\0';  // Null-terminate the string 
+    //filterNumbers();
+    Serial.println(qrData);
+
+    merkkijono = qrData;
+    ResetScanner();
+    Push_Data();
+  }
+  }
+}
+
+String Get_Data() {
+  Serial.println("making GET request");
+  clientGet.get("/JuhaniPaananen/b2a926252ab8fb2f318d5e7514ace35b/raw/example.txt");
+  String response = clientGet.responseBody();
+  Serial.print("Response: ");
+  Serial.println(response);
+  return response;
+}
+
+void ResetScanner(){
+  qrIndex = 0;
+  delay(1000);
+}
+
+void Push_Data(){
+  Pushing = true;
+  String patchData = R"json(
+  {
+    "description": "Example Gist created from Arduino",
+    "public": true,
+    "files": {
+      "example.txt": {
+        "content": "[Replace Me]"
+      }
+    }
+  })json";
+
+  String vanha = Get_Data();
+  String uusi = String(merkkijono) + ":"; 
+  patchData.replace("[Replace Me]", vanha + uusi);
+
+  Serial.println("making PATCH request");
+  clientPatch.beginRequest();  
+  clientPatch.patch("/gists/b2a926252ab8fb2f318d5e7514ace35b");
+
+  clientPatch.sendHeader("Authorization", "Token " + token);
+  Serial.println("Header sent 1");
+  clientPatch.sendHeader("Content-Type", "application/json");
+  Serial.println("Header sent 2");
+  clientPatch.sendHeader("Content-Length", patchData.length());
+  Serial.println("Header sent 3");
+
+  clientPatch.endRequest();
+  clientPatch.print(patchData);
+
+  int statusCode = clientPatch.responseStatusCode();
+  Serial.print("Second Latest Post Request Status code: ");
+  Serial.println(statusCode);
+
+  Pushing = false;
+}
+
+//If need to test basics, then uncomment this and comment out other Get_Data()
+/*
+void Get_Data() {
+  Serial.println("making GET request");
+  clientGet.get("/JuhaniPaananen/b2a926252ab8fb2f318d5e7514ace35b/raw/example.txt");
+
+  int statusCode = clientGet.responseStatusCode();
+  String response = clientGet.responseBody();
+
+  Serial.print("Status code: ");
+  Serial.println(statusCode);
+  Serial.print("Response: ");
+  Serial.println(response);
+}
+*/
