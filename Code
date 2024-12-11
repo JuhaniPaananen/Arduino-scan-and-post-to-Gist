@@ -1,4 +1,5 @@
 //This code is from school project, but had to made different version to make sure it works, so it can be used without intended screen. 
+//I haven't expained everything so I expect you know something about working with Arduino.
 
 #include <SoftwareSerial.h>
 #include <SPI.h>
